@@ -5,7 +5,7 @@ test('register, duplicate, reload and delete a video on mobile', async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  const total = page.getByRole('region', { name: '集めた動画の合計時間' });
+  const total = page.getByRole('region', { name: '未視聴動画の合計時間' });
   await expect(total).toContainText('0時間0分0秒');
   await expect(page.getByText('最初の一本を保存しよう')).toBeVisible();
 
@@ -44,6 +44,34 @@ test('register, duplicate, reload and delete a video on mobile', async ({
     path: 'test-results/library-mobile.png',
     fullPage: true,
   });
+
+  const watched = page.getByRole('button', {
+    name: 'お気に入りの動画を視聴済み',
+    exact: true,
+  });
+  await watched.click();
+  await expect(watched).toHaveAttribute('aria-pressed', 'true');
+  await expect(total).toContainText('0時間0分0秒');
+  await expect(total).toContainText('すべての動画を視聴済みです。');
+  await page.reload();
+  await expect(watched).toHaveAttribute('aria-pressed', 'true');
+  await expect(total).toContainText('0時間0分0秒');
+  await page.screenshot({
+    path: 'test-results/watched-mobile.png',
+    fullPage: true,
+  });
+
+  await page.route('**/api/videos/*', (route) =>
+    route.fulfill({ status: 500, json: { error: '更新に失敗しました。' } }),
+  );
+  await watched.click();
+  await expect(page.getByRole('alert')).toContainText('更新に失敗しました。');
+  await expect(watched).toHaveAttribute('aria-pressed', 'true');
+  await expect(total).toContainText('0時間0分0秒');
+  await page.unroute('**/api/videos/*');
+  await watched.click();
+  await expect(watched).toHaveAttribute('aria-pressed', 'false');
+  await expect(total).toContainText('0時間3分33秒');
 
   page.once('dialog', (dialog) => dialog.dismiss());
   await page.getByRole('button', { name: 'お気に入りの動画を削除' }).click();
@@ -108,6 +136,7 @@ test('total carries seconds and minutes and excludes unknown durations', async (
             title: '長い動画',
             url: 'https://youtu.be/dQw4w9WgXcQ',
             durationSeconds: 89999,
+            watched: false,
             createdAt: '2026-09-08T00:00:00Z',
           },
           {
@@ -116,6 +145,7 @@ test('total carries seconds and minutes and excludes unknown durations', async (
             title: '短い動画',
             url: 'https://youtu.be/abcdefghijk',
             durationSeconds: 62,
+            watched: false,
             createdAt: '2026-09-08T00:00:00Z',
           },
           {
@@ -124,6 +154,25 @@ test('total carries seconds and minutes and excludes unknown durations', async (
             title: '以前の動画',
             url: 'https://youtu.be/12345678901',
             durationSeconds: null,
+            watched: false,
+            createdAt: '2026-09-08T00:00:00Z',
+          },
+          {
+            id: 4,
+            videoId: 'watched0001',
+            title: '視聴済み動画',
+            url: 'https://youtu.be/watched0001',
+            durationSeconds: 3600,
+            watched: true,
+            createdAt: '2026-09-08T00:00:00Z',
+          },
+          {
+            id: 5,
+            videoId: 'watched0002',
+            title: '時間不明の視聴済み動画',
+            url: 'https://youtu.be/watched0002',
+            durationSeconds: null,
+            watched: true,
             createdAt: '2026-09-08T00:00:00Z',
           },
         ],
@@ -131,7 +180,7 @@ test('total carries seconds and minutes and excludes unknown durations', async (
     }),
   );
   await page.goto('/');
-  const total = page.getByRole('region', { name: '集めた動画の合計時間' });
+  const total = page.getByRole('region', { name: '未視聴動画の合計時間' });
   await expect(total).toContainText('25時間1分1秒');
   await expect(total).toContainText('再生時間未取得の1本は合計に含みません。');
   await page.screenshot({
@@ -166,7 +215,7 @@ test('loading, failure and unknown durations do not display a misleading zero', 
     });
   });
   await page.goto('/');
-  const total = page.getByRole('region', { name: '集めた動画の合計時間' });
+  const total = page.getByRole('region', { name: '未視聴動画の合計時間' });
   await expect(total).toContainText('合計時間を読み込み中…');
   await expect(total).not.toContainText('0時間');
   respond();
@@ -183,6 +232,7 @@ test('loading, failure and unknown durations do not display a misleading zero', 
             title: '以前の動画',
             url: 'https://youtu.be/dQw4w9WgXcQ',
             durationSeconds: null,
+            watched: false,
             createdAt: '2026-09-08T00:00:00Z',
           },
         ],

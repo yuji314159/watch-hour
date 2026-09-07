@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../server/db';
@@ -207,4 +208,84 @@ it('fetches title and duration from the official API and handles upstream failur
   await expect(fetchVideoMetadata('dQw4w9WgXcQ')).rejects.toMatchObject({
     status: 503,
   });
+});
+
+const patch = (
+  app: ReturnType<typeof setup>,
+  id: string | number,
+  data: unknown,
+) =>
+  app.request(`/api/videos/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+it('updates watched state idempotently and validates patches', async () => {
+  const app = setup();
+  const { video } = await (
+    await post(app, { url: 'https://youtu.be/dQw4w9WgXcQ' })
+  ).json();
+  expect(video.watched).toBe(false);
+  for (const watched of [true, true, false]) {
+    const response = await patch(app, video.id, { watched });
+    expect(response.status).toBe(200);
+    expect((await response.json()).video).toEqual({ ...video, watched });
+    expect(
+      (await (await app.request('/api/videos')).json()).videos[0].watched,
+    ).toBe(watched);
+  }
+  for (const data of [
+    {},
+    { watched: 'true' },
+    { watched: 1 },
+    { watched: null },
+    { watched: true, title: 'changed' },
+  ])
+    expect((await patch(app, video.id, data)).status).toBe(400);
+  for (const id of ['0', '-1', '1x', '9007199254740992'])
+    expect((await patch(app, id, { watched: true })).status).toBe(400);
+  expect((await patch(app, 999, { watched: true })).status).toBe(404);
+  expect(
+    (
+      await app.request(`/api/videos/${video.id}`, {
+        method: 'PATCH',
+        body: '{',
+      })
+    ).status,
+  ).toBe(400);
+});
+
+it('migrates existing videos as unwatched and persists watched state on reopen', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'watch-hour-watched-'));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'db.sqlite');
+  const legacy = new Database(path);
+  legacy.exec('CREATE TABLE migrations (name TEXT PRIMARY KEY)');
+  for (const name of ['0001_videos.sql', '0002_video_duration.sql']) {
+    legacy.exec(readFileSync(`migrations/${name}`, 'utf8'));
+    legacy.prepare('INSERT INTO migrations (name) VALUES (?)').run(name);
+  }
+  legacy.exec(
+    "INSERT INTO videos (video_id, title, url, created_at) VALUES ('dQw4w9WgXcQ', 'legacy', 'https://youtu.be/dQw4w9WgXcQ', '2026-09-08T00:00:00Z')",
+  );
+  legacy.close();
+
+  const first = openDatabase(path);
+  try {
+    const app = createApp(first.db);
+    const { videos } = await (await app.request('/api/videos')).json();
+    expect(videos[0]).toMatchObject({ watched: false, durationSeconds: null });
+    expect((await patch(app, videos[0].id, { watched: true })).status).toBe(
+      200,
+    );
+  } finally {
+    first.sqlite.close();
+  }
+  const second = openDatabase(path);
+  cleanups.push(() => second.sqlite.close());
+  expect(
+    (await (await createApp(second.db).request('/api/videos')).json()).videos[0]
+      .watched,
+  ).toBe(true);
 });

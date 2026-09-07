@@ -6,6 +6,7 @@ export const videos = sqliteTable('videos', {
   title: text('title').notNull(),
   url: text('url').notNull(),
   durationSeconds: integer('duration_seconds'),
+  watched: integer('watched', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull(),
 });
 
