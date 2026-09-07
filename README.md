@@ -8,8 +8,11 @@ Node.js 24 LTSを推奨。
 
 ```sh
 npm ci
+export YOUTUBE_API_KEY=your_api_key
 npm run dev
 ```
+
+Google CloudでYouTube Data API v3を有効化してAPIキーを作成し、環境変数 `YOUTUBE_API_KEY` に設定する（本番起動時も必要）。`.env` は自動読込しない。URL入力でタイトルと再生時間を自動取得し、登録時に保存する。
 
 http://127.0.0.1:5173 を開く。APIは127.0.0.1:3001。
 

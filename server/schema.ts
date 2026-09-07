@@ -5,6 +5,7 @@ export const videos = sqliteTable('videos', {
   videoId: text('video_id').notNull().unique(),
   title: text('title').notNull(),
   url: text('url').notNull(),
+  durationSeconds: integer('duration_seconds'),
   createdAt: text('created_at').notNull(),
 });
 

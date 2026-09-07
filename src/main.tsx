@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { parseVideoId } from '../server/youtube';
+import type { VideoMetadata } from '../server/youtube';
 import type { Video } from '../server/schema';
 import styles from './App.module.css';
 
@@ -14,6 +16,15 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = String(seconds % 60).padStart(2, '0');
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${remainder}`
+    : `${minutes}:${remainder}`;
+}
+
 function App() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +32,12 @@ function App() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
+  const [metadata, setMetadata] = useState<
+    (VideoMetadata & { url: string }) | null
+  >(null);
+  const [metadataError, setMetadataError] = useState('');
+  const [metadataLoading, setMetadataLoading] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<number[]>([]);
 
@@ -42,8 +58,45 @@ function App() {
     void load();
   }, []);
 
+  useEffect(() => {
+    setMetadata(null);
+    setMetadataError('');
+    setMetadataLoading(false);
+    if (!url.trim()) return;
+    if (!parseVideoId(url.trim())) {
+      setMetadataError('有効なYouTube動画URLを入力してください。');
+      return;
+    }
+
+    const controller = new AbortController();
+    setMetadataLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await api<{ metadata: VideoMetadata }>(
+          `/api/videos/metadata?url=${encodeURIComponent(url.trim())}`,
+          { signal: controller.signal },
+        );
+        if (!controller.signal.aborted)
+          setMetadata({ ...result.metadata, url });
+      } catch (e) {
+        if (!controller.signal.aborted)
+          setMetadataError(
+            e instanceof Error ? e.message : '動画情報を取得できませんでした。',
+          );
+      } finally {
+        if (!controller.signal.aborted) setMetadataLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [url, retry]);
+
   async function register(event: React.FormEvent) {
     event.preventDefault();
+    if (!metadata || metadata.url !== url || metadataLoading) return;
     setSaving(true);
     setError('');
     setNotice('');
@@ -52,12 +105,12 @@ function App() {
       const { video } = await api<{ video: Video }>('/api/videos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, title }),
+        body: JSON.stringify({ url }),
       });
 
       setVideos((previous) => [video, ...previous]);
       setUrl('');
-      setTitle('');
+      setMetadata(null);
       setNotice('動画を登録しました。');
     } catch (e) {
       setError(e instanceof Error ? e.message : '登録に失敗しました。');
@@ -132,17 +185,36 @@ function App() {
             <label>
               タイトル
               <input
-                required
-                maxLength={200}
-                placeholder="動画のタイトルを入力"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                disabled={saving}
+                readOnly
+                placeholder="URLから自動取得"
+                value={metadata?.url === url ? metadata.title : ''}
               />
             </label>
+            {metadataLoading && <p role="status">動画情報を取得中…</p>}
+            {metadata?.url === url && (
+              <p>再生時間: {formatDuration(metadata.durationSeconds)}</p>
+            )}
+            {metadataError && (
+              <div role="alert">
+                <p>{metadataError}</p>
+                <button
+                  type="button"
+                  onClick={() => setRetry((value) => value + 1)}
+                >
+                  再取得
+                </button>
+              </div>
+            )}
             <button
               className={styles.primary}
-              disabled={saving || loading || !!loadError}
+              disabled={
+                saving ||
+                loading ||
+                !!loadError ||
+                metadataLoading ||
+                !metadata ||
+                metadata.url !== url
+              }
             >
               {saving ? '登録中…' : '＋ 動画を登録'}
             </button>
@@ -179,7 +251,7 @@ function App() {
               <span className={styles.emptyIcon}>▷</span>
               <h3>最初の一本を保存しよう</h3>
               <p>
-                上のフォームにYouTubeのURLとタイトルを入力すると、
+                上のフォームにYouTubeのURLを入力すると、
                 <br />
                 ここにあなたのライブラリが広がります。
               </p>
@@ -207,7 +279,12 @@ function App() {
                     <span className={styles.play}>▶</span>
                   </a>
                   <div className={styles.cardBody}>
-                    <span className={styles.source}>YOUTUBE</span>
+                    <span className={styles.source}>
+                      YOUTUBE ·{' '}
+                      {video.durationSeconds == null
+                        ? '再生時間未取得'
+                        : formatDuration(video.durationSeconds)}
+                    </span>
                     <h3>
                       <a
                         href={video.url}
