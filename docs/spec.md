@@ -16,6 +16,7 @@ React + TypeScript + Vite、CSS Modules、Node.js + Hono、Zod、Drizzle ORM + b
 - 動画IDは英数字、ハイフン、アンダースコアの11文字。保存URLは https://www.youtube.com/watch?v=ID に正規化する。
 - 動画IDを一意にし、重複登録時は409と日本語の説明を返す。
 - 新しい登録からカードで一覧表示。タイトル、再生時間（分:秒、1時間以上は時:分:秒）、サムネイル、登録日を表示し、YouTubeを別タブで開く。
+- 各カードで視聴済み・未視聴を切り替える。視聴済み動画も一覧に残す。更新中は同じ動画の切替・削除を無効化し、失敗時は状態と合計を変更せずエラーを表示する。
 - 削除はブラウザの確認ダイアログで確認してから実行する。
 - 空状態、読込中、通信失敗、登録中、削除中の状態を表示する。
 - YouTube Data API v3のvideos.list（snippet,contentDetails）をサーバーから呼び出す。タイムアウト10秒。APIキーは環境変数YOUTUBE_API_KEYで設定し、ブラウザに渡さない。サムネイルは動画IDから生成する。
@@ -24,20 +25,22 @@ React + TypeScript + Vite、CSS Modules、Node.js + Hono、Zod、Drizzle ORM + b
 
 ## 合計時間（WATCH HOUR）
 
-- サービスの中心となる指標として、ページ上部に「YOUR WATCH HOUR / 集めた動画の合計時間」を表示する。デスクトップでは導入文の横、モバイルでは導入文と登録フォームの間に配置する。
-- GET /api/videosで取得した全登録動画のdurationSecondsをクライアントで合算。時間を最も大きく強調し、分・秒も単位付きで表示する。秒単位で正確に集計し、24時間を超えても日数に変換せず累積時間を表示する。視聴済み時間ではなく保存動画の再生時間であることを明記する。
-- 登録・削除の成功時に一覧と同時に更新する。失敗・キャンセルでは変えない。再読込後も保存データから算出する。API・DB構造は変更しない。
+- サービスの中心となる指標として、ページ上部に「YOUR WATCH HOUR / 未視聴動画の合計時間」を表示する。デスクトップでは導入文の横、モバイルでは導入文と登録フォームの間に配置する。
+- GET /api/videosで取得した未視聴動画のみのdurationSecondsをクライアントで合算。時間を最も大きく強調し、分・秒も単位付きで表示する。秒単位で正確に集計し、24時間を超えても日数に変換せず累積時間を表示する。視聴済み動画を除外することを明記する。
+- 登録・削除・視聴状態更新の成功時に一覧と同時に更新する。失敗・キャンセルでは変えない。再読込後も保存データから算出する。視聴状態はDBに永続化する。
+- 全件視聴済みの場合は「0時間0分0秒」と「すべての動画を視聴済みです。」を表示する。
 - 空のライブラリは「0時間0分0秒」と最初の登録を促す文章を表示する。読込中・取得失敗時は数値の代わりに状態を表示する。
-- 再生時間がNULLの既存動画は集計対象外とし、その本数を明記する。全動画が未取得なら合計値の代わりに「再生時間が未取得です」と表示する。
+- 再生時間がNULLの未視聴動画は集計対象外とし、その本数を明記する。未視聴動画が1本以上あり、すべて未取得なら合計値の代わりに「再生時間が未取得です」と表示する。
 - 集計結果は支援技術にpoliteなライブ領域で通知する。大きい時間数は折り返し、狭い画面でも横スクロールを発生させない。
 
 ## データとAPI
 
-videos: id（整数主キー）、videoId（一意）、title、url、durationSeconds（整数秒、既存レコードはNULL）、createdAt（UTC ISO8601）。起動時にSQLマイグレーションを適用する。
+videos: id（整数主キー）、videoId（一意）、title、url、durationSeconds（整数秒、既存レコードはNULL）、watched（boolean、SQLiteでは0/1、NOT NULL、既存・新規とも初期値false）、createdAt（UTC ISO8601）。起動時にSQLマイグレーションを適用する。
 
 - GET /api/videos → 200 { videos: Video[] }
 - GET /api/videos/metadata?url=… → 200 { metadata: { title, durationSeconds } }。DB保存なし。
 - POST /api/videos { url } → 201 { video }。不正入力400、重複409。
+- PATCH /api/videos/:id { watched: boolean } → 200 { video }。明示した状態に更新（同じ値で再送可能）。不正ID・JSON・boolean以外・未指定・余分なフィールドは400、存在しないIDは404。
 - DELETE /api/videos/:id → 204。不正ID400、存在しないID404。
 - メタデータ取得で動画なし404、再生時間未確定422、外部通信・応答異常502、APIキー未設定503。失敗時はDBに保存しない。既存動画の時間は自動補完せず「再生時間未取得」と表示する。
 - 予期しないエラーは500。APIエラーは { error: string }。
@@ -45,7 +48,7 @@ videos: id（整数主キー）、videoId（一意）、title、url、durationSe
 ## 開発・検証
 
 npm run devでViteとAPIを起動。npm run buildで型検査とビルド、npm startで本番起動。
-npm testで一時SQLiteを使ったAPI・URL検証・永続化テスト。npm run test:e2eでPlaywrightによる登録・重複・再読込・削除を検証する。
+npm testで一時SQLiteを使ったAPI・URL検証・永続化テスト。npm run test:e2eでPlaywrightによる登録・重複・再読込・削除・視聴状態切替・未視聴時間集計を検証する。
 仕様の追加・変更時はこのファイルも更新する。
 
 ## コードスタイル

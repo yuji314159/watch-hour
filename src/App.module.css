@@ -490,3 +490,18 @@
     font-size: 12px;
   }
 }
+
+.watchedButton {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid #526342;
+  border-radius: 8px;
+  background: #25322c;
+  color: #d1f28c;
+}
+
+.watchedButton[aria-pressed='true'] {
+  background: #d1f28c;
+  color: #1c2814;
+}

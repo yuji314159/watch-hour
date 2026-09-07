@@ -71,6 +71,31 @@ export function createApp(
     return c.json({ video }, 201);
   });
 
+  app.patch('/api/videos/:id', async (c) => {
+    const raw = c.req.param('id');
+    const id = Number(raw);
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(id))
+      return c.json({ error: '動画IDが不正です。' }, 400);
+
+    const input = z
+      .object({ watched: z.boolean() })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!input.success)
+      return c.json({ error: '視聴済み状態を指定してください。' }, 400);
+
+    const video = db
+      .update(videos)
+      .set(input.data)
+      .where(eq(videos.id, id))
+      .returning()
+      .get();
+
+    return video
+      ? c.json({ video })
+      : c.json({ error: '動画が見つかりません。' }, 404);
+  });
+
   app.delete('/api/videos/:id', (c) => {
     const raw = c.req.param('id');
     const id = Number(raw);

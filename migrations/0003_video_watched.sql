@@ -1,0 +1,1 @@
+ALTER TABLE videos ADD COLUMN watched INTEGER NOT NULL DEFAULT 0 CHECK (watched IN (0, 1));

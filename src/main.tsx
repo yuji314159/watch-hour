@@ -41,6 +41,8 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<number[]>([]);
 
+  const [updating, setUpdating] = useState<number[]>([]);
+
   async function load() {
     setLoading(true);
     setLoadError('');
@@ -139,11 +141,39 @@ function App() {
     }
   }
 
-  const totalSeconds = videos.reduce(
+  async function toggleWatched(video: Video) {
+    setUpdating((previous) => [...previous, video.id]);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await api<{ video: Video }>(`/api/videos/${video.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ watched: !video.watched }),
+      });
+
+      setVideos((previous) =>
+        previous.map((v) => (v.id === video.id ? result.video : v)),
+      );
+      setNotice(
+        result.video.watched ? '視聴済みにしました。' : '未視聴に戻しました。',
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : '視聴済み状態の更新に失敗しました。',
+      );
+    } finally {
+      setUpdating((previous) => previous.filter((id) => id !== video.id));
+    }
+  }
+
+  const unwatchedVideos = videos.filter((video) => !video.watched);
+  const totalSeconds = unwatchedVideos.reduce(
     (total, video) => total + (video.durationSeconds ?? 0),
     0,
   );
-  const unknownCount = videos.filter(
+  const unknownCount = unwatchedVideos.filter(
     (video) => video.durationSeconds == null,
   ).length;
 
@@ -178,7 +208,7 @@ function App() {
             aria-labelledby="watch-time-title"
           >
             <p className={styles.eyebrow}>YOUR WATCH HOUR</p>
-            <h2 id="watch-time-title">集めた動画の合計時間</h2>
+            <h2 id="watch-time-title">未視聴動画の合計時間</h2>
             <div role="status" aria-live="polite" aria-atomic="true">
               {loading ? (
                 <p className={styles.timeState}>合計時間を読み込み中…</p>
@@ -188,7 +218,8 @@ function App() {
                 </p>
               ) : (
                 <>
-                  {videos.length > 0 && unknownCount === videos.length ? (
+                  {unwatchedVideos.length > 0 &&
+                  unknownCount === unwatchedVideos.length ? (
                     <p className={styles.timeState}>再生時間が未取得です</p>
                   ) : (
                     <p className={styles.timeValue}>
@@ -215,7 +246,9 @@ function App() {
                   <p className={styles.timeCaption}>
                     {videos.length === 0
                       ? '最初の一本から、あなたの時間がはじまる。'
-                      : `${videos.length.toLocaleString('ja-JP')}本の動画が、あなたの楽しみに。`}
+                      : unwatchedVideos.length === 0
+                        ? 'すべての動画を視聴済みです。'
+                        : `未視聴の${unwatchedVideos.length.toLocaleString('ja-JP')}本の動画が、あなたの楽しみに。`}
                   </p>
                   {unknownCount > 0 && (
                     <p className={styles.timeWarning}>
@@ -227,7 +260,7 @@ function App() {
               )}
             </div>
             <p className={styles.timeFootnote}>
-              ライブラリに保存した動画の再生時間
+              未視聴動画の再生時間（視聴済み動画は含みません）
             </p>
           </section>
         </div>
@@ -362,6 +395,22 @@ function App() {
                         {video.title}
                       </a>
                     </h3>
+                    <button
+                      className={styles.watchedButton}
+                      aria-label={`${video.title}を視聴済み`}
+                      aria-pressed={video.watched}
+                      disabled={
+                        updating.includes(video.id) ||
+                        deleting.includes(video.id)
+                      }
+                      onClick={() => toggleWatched(video)}
+                    >
+                      {updating.includes(video.id)
+                        ? '更新中…'
+                        : video.watched
+                          ? '✓ 視聴済み · 未視聴に戻す'
+                          : '視聴済みにする'}
+                    </button>
                     <div className={styles.cardFooter}>
                       <time dateTime={video.createdAt}>
                         {new Date(video.createdAt).toLocaleDateString('ja-JP')}{' '}
@@ -369,7 +418,10 @@ function App() {
                       </time>
                       <button
                         aria-label={`${video.title}を削除`}
-                        disabled={deleting.includes(video.id)}
+                        disabled={
+                          deleting.includes(video.id) ||
+                          updating.includes(video.id)
+                        }
                         onClick={() => remove(video)}
                       >
                         {deleting.includes(video.id) ? '削除中…' : '削除'}
