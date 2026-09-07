@@ -1,0 +1,10 @@
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { openDatabase } from './db';
+import { createApp } from './app';
+const { db, sqlite } = openDatabase(process.env.DB_PATH ?? 'data/watch-hour.sqlite');
+const app = createApp(db);
+app.use('*', serveStatic({ root: './dist' }));
+app.get('*', serveStatic({ path: './dist/index.html' }));
+const server = serve({ fetch: app.fetch, hostname: process.env.HOST ?? '127.0.0.1', port: Number(process.env.PORT ?? 3001) }, info => console.log(`Watch Hour: http://127.0.0.1:${info.port}`));
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => server.close(() => { sqlite.close(); process.exit(0); }));
