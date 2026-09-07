@@ -10,23 +10,27 @@ React + TypeScript + Vite、CSS Modules、Node.js + Hono、Zod、Drizzle ORM + b
 
 ## 機能
 
-- YouTube URLとタイトル（必須、前後空白除去後1〜200文字）を入力して登録。
+- YouTube URL入力の500ms後にタイトルと再生時間を自動取得して表示。タイトルは読み取り専用。取得中・失敗時は登録不可で、再取得ボタンから再試行できる。URL変更時は古い取得結果を破棄する。
+- 登録時はサーバーが動画情報を再取得し、タイトルと再生時間（整数秒）を保存する。クライアント指定のタイトル・再生時間は採用しない。
 - https/httpのyoutube.com/watch?v=、youtu.be/、youtube.com/shorts/、youtube.com/embed/、youtube.com/live/形式に対応。www.youtube.comとm.youtube.comも許可する。
 - 動画IDは英数字、ハイフン、アンダースコアの11文字。保存URLは https://www.youtube.com/watch?v=ID に正規化する。
 - 動画IDを一意にし、重複登録時は409と日本語の説明を返す。
-- 新しい登録からカードで一覧表示。タイトル、サムネイル、登録日を表示し、YouTubeを別タブで開く。
+- 新しい登録からカードで一覧表示。タイトル、再生時間（分:秒、1時間以上は時:分:秒）、サムネイル、登録日を表示し、YouTubeを別タブで開く。
 - 削除はブラウザの確認ダイアログで確認してから実行する。
 - 空状態、読込中、通信失敗、登録中、削除中の状態を表示する。
-- タイトルは手動入力。サムネイルは動画IDからYouTube画像URLを生成し、取得失敗時は代替表示する。動画の存在や公開状態の確認、自動メタデータ取得は行わない。
+- YouTube Data API v3のvideos.list（snippet,contentDetails）をサーバーから呼び出す。タイムアウト10秒。APIキーは環境変数YOUTUBE_API_KEYで設定し、ブラウザに渡さない。サムネイルは動画IDから生成する。
+- 非公開・削除済みなど取得できない動画は登録しない。配信中・配信予定および再生時間が0・不明の動画は422。
 - レスポンシブな日本語UI。ログイン、タグ、検索、アプリ内再生は初期範囲外。
 
 ## データとAPI
 
-videos: id（整数主キー）、videoId（一意）、title、url、createdAt（UTC ISO8601）。起動時にSQLマイグレーションを適用する。
+videos: id（整数主キー）、videoId（一意）、title、url、durationSeconds（整数秒、既存レコードはNULL）、createdAt（UTC ISO8601）。起動時にSQLマイグレーションを適用する。
 
 - GET /api/videos → 200 { videos: Video[] }
-- POST /api/videos { url, title } → 201 { video }。不正入力400、重複409。
+- GET /api/videos/metadata?url=… → 200 { metadata: { title, durationSeconds } }。DB保存なし。
+- POST /api/videos { url } → 201 { video }。不正入力400、重複409。
 - DELETE /api/videos/:id → 204。不正ID400、存在しないID404。
+- メタデータ取得で動画なし404、再生時間未確定422、外部通信・応答異常502、APIキー未設定503。失敗時はDBに保存しない。既存動画の時間は自動補完せず「再生時間未取得」と表示する。
 - 予期しないエラーは500。APIエラーは { error: string }。
 
 ## 開発・検証
@@ -38,3 +42,13 @@ npm testで一時SQLiteを使ったAPI・URL検証・永続化テスト。npm ru
 ## コードスタイル
 
 Prettierでインデント2スペース、行幅80文字を目安に整形する。関数・APIルート・処理の段階ごとに空行を入れ、複数の処理を1行に詰め込まない。npm run formatで整形し、npm run format:checkで確認する。
+
+## YouTube API設定
+
+Google CloudでYouTube Data API v3を有効化してAPIキーを作成し、`export YOUTUBE_API_KEY=...` を実行してから開発・本番サーバーを起動する。`.env`の自動読込は行わない。取得は入力時と登録時に各1回でAPIの利用枠を消費する。APIテストとE2Eは取得処理をモックし、外部通信や実キーを必要としない。
+
+参照: https://developers.google.com/youtube/v3/docs/videos/list
+
+## Git運用
+
+作業開始時はリモートの最新mainを取得し、そのmainから作業ブランチを作成する。作業完了後は必要な検証を実行し、変更をcommit・pushしてmain向けのPRを作成する。APIキーを含むローカル設定の `mise.toml` はGit管理対象外とする。

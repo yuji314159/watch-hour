@@ -2,18 +2,23 @@ import { Hono } from 'hono';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { videos } from './schema';
-import { parseVideoId } from './youtube';
+import { parseVideoId, fetchVideoMetadata, MetadataError } from './youtube';
 import type { openDatabase } from './db';
 
 const inputSchema = z.object({
-  title: z.string().trim().min(1).max(200),
   url: z.string().trim().max(2048),
 });
 
-export function createApp(db: ReturnType<typeof openDatabase>['db']) {
+export function createApp(
+  db: ReturnType<typeof openDatabase>['db'],
+  getMetadata = fetchVideoMetadata,
+) {
   const app = new Hono();
 
   app.onError((error, c) => {
+    if (error instanceof MetadataError)
+      return c.json({ error: error.message }, error.status);
+
     console.error(error);
 
     return c.json(
@@ -26,23 +31,33 @@ export function createApp(db: ReturnType<typeof openDatabase>['db']) {
     c.json({ videos: db.select().from(videos).orderBy(desc(videos.id)).all() }),
   );
 
+  app.get('/api/videos/metadata', async (c) => {
+    const videoId = parseVideoId(c.req.query('url') ?? '');
+    if (!videoId)
+      return c.json({ error: '有効なYouTube動画URLを入力してください。' }, 400);
+
+    return c.json({ metadata: await getMetadata(videoId) });
+  });
+
   app.post('/api/videos', async (c) => {
     const input = inputSchema.safeParse(await c.req.json().catch(() => null));
     if (!input.success)
-      return c.json(
-        { error: 'URLと1〜200文字のタイトルを入力してください。' },
-        400,
-      );
+      return c.json({ error: 'YouTube URLを入力してください。' }, 400);
 
     const videoId = parseVideoId(input.data.url);
     if (!videoId)
       return c.json({ error: '有効なYouTube動画URLを入力してください。' }, 400);
 
+    if (db.select().from(videos).where(eq(videos.videoId, videoId)).get())
+      return c.json({ error: 'この動画はすでに登録されています。' }, 409);
+
+    const metadata = await getMetadata(videoId);
+
     const video = db
       .insert(videos)
       .values({
         videoId,
-        title: input.data.title,
+        ...metadata,
         url: `https://www.youtube.com/watch?v=${videoId}`,
         createdAt: new Date().toISOString(),
       })
