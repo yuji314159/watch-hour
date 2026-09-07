@@ -6,4 +6,3 @@ playwright-report/
 test-results/
 *.sqlite*
 .env
-mise.toml
