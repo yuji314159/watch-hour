@@ -3,11 +3,13 @@
 最終更新: 2026-09-08
 
 ## 目的・構成
+
 個人利用のYouTube動画ライブラリSPA。認証は設けず、初期状態ではローカルホストのみで待ち受ける。
 React + TypeScript + Vite、CSS Modules、Node.js + Hono、Zod、Drizzle ORM + better-sqlite3を使用する。
 本番はNode.jsがビルド済みSPAと同一オリジンのAPIを配信する。SQLiteはDB_PATH（既定 data/watch-hour.sqlite）に永続化する。
 
 ## 機能
+
 - YouTube URLとタイトル（必須、前後空白除去後1〜200文字）を入力して登録。
 - https/httpのyoutube.com/watch?v=、youtu.be/、youtube.com/shorts/、youtube.com/embed/、youtube.com/live/形式に対応。www.youtube.comとm.youtube.comも許可する。
 - 動画IDは英数字、ハイフン、アンダースコアの11文字。保存URLは https://www.youtube.com/watch?v=ID に正規化する。
@@ -19,13 +21,20 @@ React + TypeScript + Vite、CSS Modules、Node.js + Hono、Zod、Drizzle ORM + b
 - レスポンシブな日本語UI。ログイン、タグ、検索、アプリ内再生は初期範囲外。
 
 ## データとAPI
+
 videos: id（整数主キー）、videoId（一意）、title、url、createdAt（UTC ISO8601）。起動時にSQLマイグレーションを適用する。
+
 - GET /api/videos → 200 { videos: Video[] }
 - POST /api/videos { url, title } → 201 { video }。不正入力400、重複409。
 - DELETE /api/videos/:id → 204。不正ID400、存在しないID404。
 - 予期しないエラーは500。APIエラーは { error: string }。
 
 ## 開発・検証
+
 npm run devでViteとAPIを起動。npm run buildで型検査とビルド、npm startで本番起動。
 npm testで一時SQLiteを使ったAPI・URL検証・永続化テスト。npm run test:e2eでPlaywrightによる登録・重複・再読込・削除を検証する。
 仕様の追加・変更時はこのファイルも更新する。
+
+## コードスタイル
+
+Prettierでインデント2スペース、行幅80文字を目安に整形する。関数・APIルート・処理の段階ごとに空行を入れ、複数の処理を1行に詰め込まない。npm run formatで整形し、npm run format:checkで確認する。

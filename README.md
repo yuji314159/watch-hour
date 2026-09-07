@@ -36,3 +36,7 @@ npm run test:e2e
 
 APIテストは一時DB、E2Eテストは専用サーバーのメモリDBを使うため、通常の保存データを変更しない。
 仕様変更時は docs/spec.md も更新する。
+
+## コード整形
+
+`npm run format` で整形し、`npm run format:check` で形式を確認する。処理のまとまりごとに空行を入れて読みやすさを保つ。

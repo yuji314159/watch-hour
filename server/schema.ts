@@ -1,4 +1,5 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
 export const videos = sqliteTable('videos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   videoId: text('video_id').notNull().unique(),
@@ -6,4 +7,5 @@ export const videos = sqliteTable('videos', {
   url: text('url').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
 export type Video = typeof videos.$inferSelect;
