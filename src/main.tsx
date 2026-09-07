@@ -139,6 +139,14 @@ function App() {
     }
   }
 
+  const totalSeconds = videos.reduce(
+    (total, video) => total + (video.durationSeconds ?? 0),
+    0,
+  );
+  const unknownCount = videos.filter(
+    (video) => video.durationSeconds == null,
+  ).length;
+
   return (
     <div className={styles.app}>
       <header className={styles.header}>
@@ -150,19 +158,79 @@ function App() {
       </header>
 
       <main>
-        <section className={styles.intro}>
-          <p className={styles.eyebrow}>SAVE NOW. WATCH LATER.</p>
-          <h1>
-            観たい時間を、
-            <br />
-            ここに集めよう。
-          </h1>
-          <p>
-            気になる動画も、何度も観たい一本も。
-            <br />
-            YouTubeのリンクを保存して、あなたのペースで。
-          </p>
-        </section>
+        <div className={styles.hero}>
+          <section className={styles.intro}>
+            <p className={styles.eyebrow}>SAVE NOW. WATCH LATER.</p>
+            <h1>
+              観たい時間を、
+              <br />
+              ここに集めよう。
+            </h1>
+            <p>
+              気になる動画も、何度も観たい一本も。
+              <br />
+              YouTubeのリンクを保存して、あなたのペースで。
+            </p>
+          </section>
+
+          <section
+            className={styles.watchTime}
+            aria-labelledby="watch-time-title"
+          >
+            <p className={styles.eyebrow}>YOUR WATCH HOUR</p>
+            <h2 id="watch-time-title">集めた動画の合計時間</h2>
+            <div role="status" aria-live="polite" aria-atomic="true">
+              {loading ? (
+                <p className={styles.timeState}>合計時間を読み込み中…</p>
+              ) : loadError ? (
+                <p className={styles.timeState}>
+                  合計時間を取得できませんでした
+                </p>
+              ) : (
+                <>
+                  {videos.length > 0 && unknownCount === videos.length ? (
+                    <p className={styles.timeState}>再生時間が未取得です</p>
+                  ) : (
+                    <p className={styles.timeValue}>
+                      <span className={styles.hours}>
+                        <strong>
+                          {Math.floor(totalSeconds / 3600).toLocaleString(
+                            'ja-JP',
+                          )}
+                        </strong>
+                        <span>時間</span>
+                      </span>
+                      <span className={styles.timePart}>
+                        <strong>
+                          {Math.floor((totalSeconds % 3600) / 60)}
+                        </strong>
+                        <span>分</span>
+                      </span>
+                      <span className={styles.timePart}>
+                        <strong>{totalSeconds % 60}</strong>
+                        <span>秒</span>
+                      </span>
+                    </p>
+                  )}
+                  <p className={styles.timeCaption}>
+                    {videos.length === 0
+                      ? '最初の一本から、あなたの時間がはじまる。'
+                      : `${videos.length.toLocaleString('ja-JP')}本の動画が、あなたの楽しみに。`}
+                  </p>
+                  {unknownCount > 0 && (
+                    <p className={styles.timeWarning}>
+                      再生時間未取得の{unknownCount.toLocaleString('ja-JP')}
+                      本は合計に含みません。
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+            <p className={styles.timeFootnote}>
+              ライブラリに保存した動画の再生時間
+            </p>
+          </section>
+        </div>
 
         <section className={styles.register} aria-labelledby="register-title">
           <div>
