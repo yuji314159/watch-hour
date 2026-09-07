@@ -72,8 +72,106 @@
   font-size: 12px;
 }
 
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  align-items: center;
+  gap: 40px;
+  padding: 56px 0 44px;
+}
+
 .intro {
-  padding: 65px 0 40px;
+  min-width: 0;
+}
+
+.watchTime {
+  min-width: 0;
+  padding: 30px;
+  border: 1px solid #526342;
+  border-radius: 20px;
+  background: radial-gradient(
+    ellipse at top right,
+    #35452c 0,
+    #202d25 55%,
+    #1a2422 100%
+  );
+}
+
+.watchTime h2 {
+  font-size: 15px;
+  font-weight: 500;
+  color: #dae4d3;
+  margin: 14px 0 24px;
+}
+
+.timeValue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px 20px;
+  margin: 0 0 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hours,
+.timePart {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.hours {
+  color: #d1f28c;
+}
+
+.hours strong {
+  font-size: clamp(52px, 5.5vw, 80px);
+  line-height: 1.1;
+  letter-spacing: -3px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.timePart strong {
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.timeValue span > span {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.timeCaption,
+.timeWarning,
+.timeState {
+  line-height: 1.8;
+}
+
+.timeCaption {
+  color: #dce6d5;
+  margin: 0;
+}
+
+.timeWarning {
+  color: #e8cf99;
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+.timeState {
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  color: #dae4d3;
+}
+
+.timeFootnote {
+  border-top: 1px solid #42513e;
+  padding-top: 16px;
+  margin: 24px 0 0;
+  color: #aebda7;
+  font-size: 11px;
 }
 
 .eyebrow {
@@ -327,12 +425,6 @@
   letter-spacing: 0;
 }
 
-@media (min-width: 1200px) {
-  .intro h1 br {
-    display: none;
-  }
-}
-
 @media (max-width: 800px) {
   .app {
     padding: 0 24px;
@@ -354,8 +446,14 @@
     width: 100%;
   }
 
-  .intro {
-    padding-top: 40px;
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 30px 0;
+  }
+
+  .watchTime {
+    padding: 24px;
   }
 
   .intro h1 {
