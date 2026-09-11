@@ -1,3 +1,4 @@
+import { Channels } from './Channels';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { parseVideoId } from '../server/youtube';
@@ -330,6 +331,8 @@ function App() {
         <p className={styles.notice} role="status">
           {notice}
         </p>
+
+        <Channels onImport={load} />
 
         <section aria-labelledby="library-title">
           <div className={styles.sectionHeading}>

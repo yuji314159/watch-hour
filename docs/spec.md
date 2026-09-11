@@ -1,6 +1,6 @@
 # Watch Hour 仕様
 
-最終更新: 2026-09-08
+最終更新: 2026-09-11
 
 ## 目的・構成
 
@@ -64,3 +64,31 @@ Google CloudでYouTube Data API v3を有効化してAPIキーを作成し、`exp
 ## Git運用
 
 作業開始時はリモートの最新mainを取得し、そのmainから作業ブランチを作成する。作業完了後は必要な検証を実行し、変更をcommit・pushしてmain向けのPRを作成する。APIキーを含むローカル設定の `mise.toml` はGit管理対象外とする。
+
+## チャンネル登録と手動取り込み
+
+- チャンネル一覧をライブラリの上に表示。チャンネル名、YouTubeへのリンク、最終確認日時、登録フォーム、各チャンネルの「新着動画を取り込む」「チャンネルを削除」を提供する。
+- 登録URLはHTTP/HTTPSのyoutube.com（www/mも可）の `/@ハンドル` と `/channel/UC…`。チャンネルIDはUC＋22文字。ハンドルは日本語などのURLエンコードにも対応する。動画URL、旧カスタムURL、認証情報・ポート付きURLは受け付けない。
+- channels.list（snippet,contentDetails、id/forHandle）で正式なチャンネルID・名前・投稿動画プレイリストIDを取得。チャンネルIDで重複を防ぐ。登録時には動画を取り込まない。
+- 手動実行時にplaylistItems.list（contentDetails、50件/ページ）の全ページを確認し、公開日時がチャンネル登録日時以降の動画だけを取り込む。過去動画の一括取り込みや定期実行は行わない。全ページの走査のため投稿数に応じたAPI利用枠と時間を消費する。
+- videos.listでタイトル・確定した再生時間を取得して未視聴で保存。既存の動画は重複追加せず視聴状態を維持する。取り込み履歴を保持し、取り込み後にライブラリから削除した動画も再追加しない。
+- 404/422の動画はスキップして件数を表示し、次回再確認する。通信・応答異常時はその実行の動画・履歴・最終確認日時を保存せずエラーを返す。保存はトランザクション。同じチャンネルの同時実行は409。取得中にチャンネルが削除された場合は404で保存しない。
+- 成功時に追加件数を表示し、ライブラリと未視聴合計時間を再取得する。実行中はチャンネル操作を無効化。読込・空・失敗・再読込状態を表示する。
+- チャンネル削除は確認ダイアログを表示。チャンネルと取り込み履歴のみを削除し、ライブラリの動画は残す。再登録時は新しい登録日時を基準とする。
+- 既存のYOUTUBE_API_KEYを使用し、各外部リクエストのタイムアウトは10秒。キーはサーバーのみで使用する。
+
+データ:
+
+- channels: id（整数主キー）、channelId（一意）、title、uploadsPlaylistId、createdAt（UTC ISO8601）、lastCheckedAt（UTC ISO8601、未実行はNULL）。
+- channel_imports: channelId（内部整数ID）、videoId。組で主キー。起動時マイグレーション0004で既存DBに追加する。
+
+API:
+
+- GET /api/channels → 200 { channels: Channel[] }（登録の新しい順）。
+- POST /api/channels { url } → 201 { channel }。不正入力400、重複409、存在しないチャンネル404。
+- DELETE /api/channels/:id → 204。不正ID400、存在しないID404。
+- POST /api/channels/:id/sync → 200 { added, skipped, channel }。addedは追加本数、skippedは今回取得不可だった本数。不正ID400、存在しないID404、実行中409。外部通信・応答異常502、APIキー未設定503。
+
+APIテストはURL検証・ページング・公開日時判定・重複・再試行・失敗時の原子性・視聴状態維持・削除を検証。E2Eはチャンネル登録・手動取り込み・再実行・再読込・削除確認と動画の保持を検証する。外部APIはモックする。
+
+参照: https://developers.google.com/youtube/v3/docs/channels/list 、 https://developers.google.com/youtube/v3/docs/playlistItems/list

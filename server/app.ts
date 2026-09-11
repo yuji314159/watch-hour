@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { videos } from './schema';
+import { channels, channelImports, videos } from './schema';
 import { parseVideoId, fetchVideoMetadata, MetadataError } from './youtube';
 import type { openDatabase } from './db';
+
+import { fetchChannel, fetchChannelVideos, parseChannelUrl } from './channels';
 
 const inputSchema = z.object({
   url: z.string().trim().max(2048),
@@ -12,6 +14,8 @@ const inputSchema = z.object({
 export function createApp(
   db: ReturnType<typeof openDatabase>['db'],
   getMetadata = fetchVideoMetadata,
+  getChannel = fetchChannel,
+  getChannelVideos = fetchChannelVideos,
 ) {
   const app = new Hono();
 
@@ -107,6 +111,145 @@ export function createApp(
     return result.changes
       ? c.body(null, 204)
       : c.json({ error: '動画が見つかりません。' }, 404);
+  });
+
+  app.get('/api/channels', (c) =>
+    c.json({
+      channels: db.select().from(channels).orderBy(desc(channels.id)).all(),
+    }),
+  );
+
+  app.post('/api/channels', async (c) => {
+    const input = inputSchema.safeParse(await c.req.json().catch(() => null));
+    const parsed = input.success ? parseChannelUrl(input.data.url) : null;
+    if (!parsed)
+      return c.json(
+        {
+          error:
+            '有効なYouTubeチャンネルURL（@ハンドルまたは/channel/ID）を入力してください。',
+        },
+        400,
+      );
+
+    const metadata = await getChannel(parsed);
+    const channel = db
+      .insert(channels)
+      .values({ ...metadata, createdAt: new Date().toISOString() })
+      .onConflictDoNothing()
+      .returning()
+      .get();
+    return channel
+      ? c.json({ channel }, 201)
+      : c.json({ error: 'このチャンネルはすでに登録されています。' }, 409);
+  });
+
+  app.use('/api/channels/:id/*', async (c, next) => {
+    const raw = c.req.param('id') ?? '';
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+      return c.json({ error: 'チャンネルIDが不正です。' }, 400);
+    await next();
+  });
+
+  app.delete('/api/channels/:id', (c) => {
+    const raw = c.req.param('id');
+    const id = Number(raw);
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(id))
+      return c.json({ error: 'チャンネルIDが不正です。' }, 400);
+    const removed = db.transaction((tx) => {
+      tx.delete(channelImports).where(eq(channelImports.channelId, id)).run();
+      return tx.delete(channels).where(eq(channels.id, id)).run().changes;
+    });
+    return removed
+      ? c.body(null, 204)
+      : c.json({ error: 'チャンネルが見つかりません。' }, 404);
+  });
+
+  const syncing = new Set<number>();
+  app.post('/api/channels/:id/sync', async (c) => {
+    const id = Number(c.req.param('id'));
+    const channel = db.select().from(channels).where(eq(channels.id, id)).get();
+    if (!channel) return c.json({ error: 'チャンネルが見つかりません。' }, 404);
+    if (syncing.has(id))
+      return c.json({ error: 'このチャンネルは取り込み中です。' }, 409);
+    syncing.add(id);
+
+    try {
+      const ids = await getChannelVideos(
+        channel.uploadsPlaylistId,
+        channel.createdAt,
+      );
+      const seen = new Set(
+        db
+          .select()
+          .from(channelImports)
+          .where(eq(channelImports.channelId, id))
+          .all()
+          .map((row) => row.videoId),
+      );
+      const pending: {
+        videoId: string;
+        title: string;
+        durationSeconds: number;
+      }[] = [];
+      let skipped = 0;
+
+      for (const videoId of new Set(ids)) {
+        if (seen.has(videoId)) continue;
+
+        try {
+          pending.push({ videoId, ...(await getMetadata(videoId)) });
+        } catch (error) {
+          if (
+            error instanceof MetadataError &&
+            [404, 422].includes(error.status)
+          ) {
+            skipped++;
+            continue;
+          }
+
+          throw error;
+        }
+      }
+
+      const result = db.transaction((tx) => {
+        if (!tx.select().from(channels).where(eq(channels.id, id)).get())
+          return null;
+
+        let added = 0;
+        for (const video of pending) {
+          const imported = tx
+            .insert(channelImports)
+            .values({ channelId: id, videoId: video.videoId })
+            .onConflictDoNothing()
+            .run();
+          if (!imported.changes) continue;
+          added += tx
+            .insert(videos)
+            .values({
+              ...video,
+              url: `https://www.youtube.com/watch?v=${video.videoId}`,
+              createdAt: new Date().toISOString(),
+            })
+            .onConflictDoNothing()
+            .run().changes;
+        }
+
+        const updated = tx
+          .update(channels)
+          .set({ lastCheckedAt: new Date().toISOString() })
+          .where(eq(channels.id, id))
+          .returning()
+          .get();
+
+        return { added, skipped, channel: updated };
+      });
+
+      return result
+        ? c.json(result)
+        : c.json({ error: 'チャンネルが削除されました。' }, 404);
+    } finally {
+      syncing.delete(id);
+    }
   });
 
   app.all('/api/*', (c) => c.json({ error: 'APIが見つかりません。' }, 404));

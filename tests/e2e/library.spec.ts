@@ -243,3 +243,45 @@ test('loading, failure and unknown durations do not display a misleading zero', 
   await expect(total).toContainText('再生時間が未取得です');
   await expect(total).not.toContainText('0時間');
 });
+
+test('register, import, reload and delete a channel', async ({ page }) => {
+  await page.goto('/');
+  const section = page.getByRole('region', { name: '登録チャンネル' });
+  await section.getByLabel('チャンネルURL').fill('https://youtube.com/@test');
+  await section
+    .getByRole('button', { name: 'チャンネルを登録', exact: true })
+    .click();
+  await expect(
+    section.getByRole('link', { name: 'テストチャンネル' }),
+  ).toBeVisible();
+  await section.getByRole('button', { name: '新着動画を取り込む' }).click();
+  await expect(section.getByRole('status')).toContainText(
+    '1本の動画を追加しました',
+  );
+  await expect(
+    page
+      .locator('article')
+      .filter({ has: page.locator('a[href*="channel0001"]') }),
+  ).toBeVisible();
+  await section.getByRole('button', { name: '新着動画を取り込む' }).click();
+  await expect(section.getByRole('status')).toContainText(
+    '0本の動画を追加しました',
+  );
+  await page.reload();
+  await expect(
+    section.getByRole('link', { name: 'テストチャンネル' }),
+  ).toBeVisible();
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await section.getByRole('button', { name: 'チャンネルを削除' }).click();
+  await expect(
+    section.getByRole('link', { name: 'テストチャンネル' }),
+  ).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await section.getByRole('button', { name: 'チャンネルを削除' }).click();
+  await expect(section.getByText('登録チャンネルはありません。')).toBeVisible();
+  await expect(
+    page
+      .locator('article')
+      .filter({ has: page.locator('a[href*="channel0001"]') }),
+  ).toBeVisible();
+});

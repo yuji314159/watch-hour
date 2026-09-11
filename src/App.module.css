@@ -505,3 +505,35 @@
   background: #d1f28c;
   color: #1c2814;
 }
+
+.channels {
+  margin: 28px 0;
+}
+.channelList {
+  list-style: none;
+  padding: 0;
+}
+.channelList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+  border-top: 1px solid #36403d;
+}
+.channelList li > div {
+  flex: 1;
+  min-width: 180px;
+  overflow-wrap: anywhere;
+}
+.channelList p {
+  color: #98a6a1;
+  font-size: 12px;
+}
+.channelList button:last-child {
+  background: transparent;
+  color: #ffd2cc;
+  border: 1px solid #63504d;
+  border-radius: 8px;
+  padding: 12px;
+}
