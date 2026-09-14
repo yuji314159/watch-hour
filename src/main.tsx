@@ -26,8 +26,17 @@ function formatDuration(seconds: number): string {
     : `${minutes}:${remainder}`;
 }
 
+type LibraryFilter = 'all' | 'unwatched' | 'watched';
+
+const libraryFilters: { value: LibraryFilter; label: string }[] = [
+  { value: 'all', label: 'すべて' },
+  { value: 'unwatched', label: '未視聴のみ' },
+  { value: 'watched', label: '視聴済みのみ' },
+];
+
 function App() {
   const [videos, setVideos] = useState<Video[]>([]);
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
@@ -177,6 +186,11 @@ function App() {
   const unknownCount = unwatchedVideos.filter(
     (video) => video.durationSeconds == null,
   ).length;
+  const visibleVideos = videos.filter((video) => {
+    if (libraryFilter === 'unwatched') return !video.watched;
+    if (libraryFilter === 'watched') return video.watched;
+    return true;
+  });
 
   return (
     <div className={styles.app}>
@@ -341,6 +355,24 @@ function App() {
             </h2>
             <p>追加した順</p>
           </div>
+          {!loading && !loadError && videos.length > 0 && (
+            <div
+              className={styles.libraryFilters}
+              role="group"
+              aria-label="ライブラリの表示"
+            >
+              {libraryFilters.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={libraryFilter === value}
+                  onClick={() => setLibraryFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {loading ? (
             <p role="status" className={styles.empty}>
               ライブラリを読み込み中…
@@ -360,9 +392,17 @@ function App() {
                 ここにあなたのライブラリが広がります。
               </p>
             </div>
+          ) : visibleVideos.length === 0 ? (
+            <div className={styles.empty}>
+              <p>
+                {libraryFilter === 'unwatched'
+                  ? '未視聴の動画はありません。'
+                  : '視聴済みの動画はありません。'}
+              </p>
+            </div>
           ) : (
             <div className={styles.grid}>
-              {videos.map((video) => (
+              {visibleVideos.map((video) => (
                 <article className={styles.card} key={video.id}>
                   <a
                     href={video.url}
