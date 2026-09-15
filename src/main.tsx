@@ -27,6 +27,13 @@ function formatDuration(seconds: number): string {
 }
 
 type LibraryFilter = 'all' | 'unwatched' | 'watched';
+type LibrarySort =
+  | 'added-desc'
+  | 'added-asc'
+  | 'title-asc'
+  | 'title-desc'
+  | 'duration-asc'
+  | 'duration-desc';
 
 const libraryFilters: { value: LibraryFilter; label: string }[] = [
   { value: 'all', label: 'すべて' },
@@ -34,9 +41,48 @@ const libraryFilters: { value: LibraryFilter; label: string }[] = [
   { value: 'watched', label: '視聴済みのみ' },
 ];
 
+const librarySorts: { value: LibrarySort; label: string }[] = [
+  { value: 'added-desc', label: '追加が新しい順' },
+  { value: 'added-asc', label: '追加が古い順' },
+  { value: 'title-asc', label: 'タイトル昇順' },
+  { value: 'title-desc', label: 'タイトル降順' },
+  { value: 'duration-asc', label: '再生時間が短い順' },
+  { value: 'duration-desc', label: '再生時間が長い順' },
+];
+
+const titleCollator = new Intl.Collator('ja', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+function sortVideos(videos: Video[], sort: LibrarySort): Video[] {
+  return [...videos].sort((first, second) => {
+    if (sort === 'added-desc') return second.id - first.id;
+    if (sort === 'added-asc') return first.id - second.id;
+
+    if (sort === 'title-asc' || sort === 'title-desc') {
+      const comparison = titleCollator.compare(first.title, second.title);
+      return sort === 'title-asc'
+        ? comparison || second.id - first.id
+        : -comparison || second.id - first.id;
+    }
+
+    if (first.durationSeconds == null) {
+      return second.durationSeconds == null ? second.id - first.id : 1;
+    }
+    if (second.durationSeconds == null) return -1;
+
+    const comparison = first.durationSeconds - second.durationSeconds;
+    return sort === 'duration-asc'
+      ? comparison || second.id - first.id
+      : -comparison || second.id - first.id;
+  });
+}
+
 function App() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
+  const [librarySort, setLibrarySort] = useState<LibrarySort>('added-desc');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
@@ -186,11 +232,14 @@ function App() {
   const unknownCount = unwatchedVideos.filter(
     (video) => video.durationSeconds == null,
   ).length;
-  const visibleVideos = videos.filter((video) => {
-    if (libraryFilter === 'unwatched') return !video.watched;
-    if (libraryFilter === 'watched') return video.watched;
-    return true;
-  });
+  const visibleVideos = sortVideos(
+    videos.filter((video) => {
+      if (libraryFilter === 'unwatched') return !video.watched;
+      if (libraryFilter === 'watched') return video.watched;
+      return true;
+    }),
+    librarySort,
+  );
 
   return (
     <div className={styles.app}>
@@ -353,7 +402,23 @@ function App() {
             <h2 id="library-title">
               マイライブラリ <span>{videos.length}</span>
             </h2>
-            <p>追加した順</p>
+            {!loading && !loadError && videos.length > 0 && (
+              <label className={styles.librarySort}>
+                並び順
+                <select
+                  value={librarySort}
+                  onChange={(event) =>
+                    setLibrarySort(event.target.value as LibrarySort)
+                  }
+                >
+                  {librarySorts.map(({ value, label }) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           {!loading && !loadError && videos.length > 0 && (
             <div

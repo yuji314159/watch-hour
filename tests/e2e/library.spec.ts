@@ -275,6 +275,69 @@ test('library filter follows watched changes and resets on reload', async ({
   ).toBe(true);
 });
 
+test('library sorts by addition, title and duration and resets on reload', async ({
+  page,
+}) => {
+  await page.route('**/api/videos', (route) =>
+    route.fulfill({
+      json: {
+        videos: [
+          {
+            id: 3,
+            videoId: 'unknown0001',
+            title: '動画1',
+            url: 'https://youtu.be/unknown0001',
+            durationSeconds: null,
+            watched: false,
+            createdAt: '2026-09-10T00:00:00Z',
+          },
+          {
+            id: 2,
+            videoId: 'duration120',
+            title: '動画10',
+            url: 'https://youtu.be/duration120',
+            durationSeconds: 120,
+            watched: false,
+            createdAt: '2026-09-09T00:00:00Z',
+          },
+          {
+            id: 1,
+            videoId: 'duration060',
+            title: '動画2',
+            url: 'https://youtu.be/duration060',
+            durationSeconds: 60,
+            watched: false,
+            createdAt: '2026-09-08T00:00:00Z',
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto('/');
+
+  const sort = page.getByLabel('並び順');
+  const titles = page.locator('article h3');
+  await expect(sort).toHaveValue('added-desc');
+  await expect(titles).toHaveText(['動画1', '動画10', '動画2']);
+
+  await sort.selectOption('added-asc');
+  await expect(titles).toHaveText(['動画2', '動画10', '動画1']);
+
+  await sort.selectOption('title-asc');
+  await expect(titles).toHaveText(['動画1', '動画2', '動画10']);
+  await sort.selectOption('title-desc');
+  await expect(titles).toHaveText(['動画10', '動画2', '動画1']);
+
+  await sort.selectOption('duration-asc');
+  await expect(titles).toHaveText(['動画2', '動画10', '動画1']);
+  await sort.selectOption('duration-desc');
+  await expect(titles).toHaveText(['動画10', '動画2', '動画1']);
+
+  await page.reload();
+  await expect(sort).toHaveValue('added-desc');
+  await expect(titles).toHaveText(['動画1', '動画10', '動画2']);
+});
+
 test('loading, failure and unknown durations do not display a misleading zero', async ({
   page,
 }) => {

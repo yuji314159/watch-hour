@@ -286,9 +286,25 @@
   margin-left: 9px;
 }
 
-.sectionHeading p {
+.librarySort {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
   color: #98a6a1;
+}
+
+.librarySort select {
+  border: 1px solid #46554b;
+  border-radius: 8px;
+  background: #1b2425;
+  color: #f1f3ee;
+  padding: 9px 32px 9px 12px;
+}
+
+.librarySort select:focus-visible {
+  outline: 2px solid #d1f28c;
+  outline-offset: 3px;
 }
 
 .libraryFilters {
@@ -498,6 +514,16 @@
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sectionHeading h2 {
+    margin-bottom: 8px;
   }
 
   .register {
