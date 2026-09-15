@@ -291,6 +291,28 @@
   color: #98a6a1;
 }
 
+.libraryFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 22px;
+}
+
+.libraryFilters button {
+  padding: 9px 15px;
+  border: 1px solid #46554b;
+  border-radius: 999px;
+  background: #1b2425;
+  color: #c3ccc4;
+}
+
+.libraryFilters button[aria-pressed='true'] {
+  border-color: #d1f28c;
+  background: #d1f28c;
+  color: #1c2814;
+  font-weight: 700;
+}
+
 .empty {
   border: 1px dashed #3a4642;
   border-radius: 14px;

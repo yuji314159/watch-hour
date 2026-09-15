@@ -200,6 +200,81 @@ test('total carries seconds and minutes and excludes unknown durations', async (
   });
 });
 
+test('library filter follows watched changes and resets on reload', async ({
+  page,
+}) => {
+  const videos = [
+    {
+      id: 1,
+      videoId: 'dQw4w9WgXcQ',
+      title: '未視聴の動画',
+      url: 'https://youtu.be/dQw4w9WgXcQ',
+      durationSeconds: 120,
+      watched: false,
+      createdAt: '2026-09-08T00:00:00Z',
+    },
+    {
+      id: 2,
+      videoId: 'abcdefghijk',
+      title: '視聴済みの動画',
+      url: 'https://youtu.be/abcdefghijk',
+      durationSeconds: 60,
+      watched: true,
+      createdAt: '2026-09-07T00:00:00Z',
+    },
+  ];
+
+  await page.route('**/api/videos', (route) =>
+    route.fulfill({ json: { videos } }),
+  );
+  await page.route('**/api/videos/1', async (route) => {
+    videos[0].watched = (await route.request().postDataJSON()).watched;
+    await route.fulfill({ json: { video: videos[0] } });
+  });
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('/');
+
+  const filters = page.getByRole('group', { name: 'ライブラリの表示' });
+  const all = filters.getByRole('button', { name: 'すべて' });
+  const unwatched = filters.getByRole('button', { name: '未視聴のみ' });
+  const watched = filters.getByRole('button', { name: '視聴済みのみ' });
+  const total = page.getByRole('region', { name: '未視聴動画の合計時間' });
+
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('article')).toHaveCount(2);
+  await expect(total).toContainText('0時間2分0秒');
+
+  await unwatched.click();
+  await expect(unwatched).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('article')).toHaveCount(1);
+  await expect(
+    page.getByRole('heading', { name: '未視聴の動画' }),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: '未視聴の動画を視聴済み' }).click();
+  await expect(page.getByText('未視聴の動画はありません。')).toBeVisible();
+  await expect(total).toContainText('0時間0分0秒');
+  await expect(
+    page.getByRole('heading', { name: 'マイライブラリ 2' }),
+  ).toBeVisible();
+
+  await watched.click();
+  await expect(page.locator('article')).toHaveCount(2);
+  await expect(
+    page.getByRole('heading', { name: '未視聴の動画' }),
+  ).toBeVisible();
+
+  await page.reload();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('article')).toHaveCount(2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test('loading, failure and unknown durations do not display a misleading zero', async ({
   page,
 }) => {
