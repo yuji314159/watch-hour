@@ -6,7 +6,7 @@ import {
   fetchChannelVideos,
   parseChannelUrl,
 } from '../server/channels';
-import { MetadataError } from '../server/youtube';
+import { fetchVideoMetadataBatch, MetadataError } from '../server/youtube';
 
 const connections: ReturnType<typeof openDatabase>[] = [];
 afterEach(() => {
@@ -26,10 +26,16 @@ function setup() {
     title: '新着動画',
     durationSeconds: 60,
   }));
+  const batch = vi.fn(
+    async (ids: string[]) =>
+      new Map(
+        ids.map((id) => [id, { title: '新着動画', durationSeconds: 60 }]),
+      ),
+  );
   const list = vi.fn(async () => ['abcdefghijk']);
   return {
-    app: createApp(connection.db, metadata, async () => channel, list),
-    metadata,
+    app: createApp(connection.db, metadata, async () => channel, list, batch),
+    batch,
     list,
   };
 }
@@ -71,12 +77,10 @@ it('registers, deduplicates, imports, retains watched state and does not restore
 });
 
 it('does not partially save failures; retries unavailable videos; channel deletion retains library', async () => {
-  const { app, metadata, list } = setup();
+  const { app, batch, list } = setup();
   const { channel: saved } = await (await register(app)).json();
   list.mockResolvedValue(['abcdefghijk', '12345678901']);
-  metadata
-    .mockResolvedValueOnce({ title: 'ok', durationSeconds: 60 })
-    .mockRejectedValueOnce(new MetadataError('failed'));
+  batch.mockRejectedValueOnce(new MetadataError('failed'));
   const sync = () =>
     app.request(`/api/channels/${saved.id}/sync`, { method: 'POST' });
   expect((await sync()).status).toBe(502);
@@ -87,7 +91,9 @@ it('does not partially save failures; retries unavailable videos; channel deleti
     (await (await app.request('/api/channels')).json()).channels[0]
       .lastCheckedAt,
   ).toBeNull();
-  metadata.mockRejectedValueOnce(new MetadataError('live', 422));
+  batch.mockResolvedValueOnce(
+    new Map([['abcdefghijk', { title: 'ok', durationSeconds: 60 }]]),
+  );
   expect(await (await sync()).json()).toMatchObject({ added: 1, skipped: 1 });
   expect(await (await sync()).json()).toMatchObject({ added: 1, skipped: 0 });
   expect(
@@ -104,6 +110,116 @@ it('does not partially save failures; retries unavailable videos; channel deleti
   expect(
     (await app.request('/api/channels/1x', { method: 'DELETE' })).status,
   ).toBe(400);
+});
+
+it('requests unseen video metadata in batches of at most 50', async () => {
+  const { app, batch, list } = setup();
+  const { channel: saved } = await (await register(app)).json();
+  const ids = Array.from({ length: 51 }, (_, index) =>
+    String(index).padStart(11, '0'),
+  );
+  list.mockResolvedValue(ids);
+
+  const sync = () =>
+    app.request(`/api/channels/${saved.id}/sync`, { method: 'POST' });
+  expect(await (await sync()).json()).toMatchObject({ added: 51, skipped: 0 });
+  expect(batch).toHaveBeenCalledTimes(2);
+  expect(batch.mock.calls[0][0]).toEqual(ids.slice(0, 50));
+  expect(batch.mock.calls[1][0]).toEqual(ids.slice(50));
+
+  expect(await (await sync()).json()).toMatchObject({ added: 0, skipped: 0 });
+  expect(batch).toHaveBeenCalledTimes(2);
+});
+
+it('skips missing and live videos in one batch, then retries them', async () => {
+  vi.stubEnv('YOUTUBE_API_KEY', 'test');
+  const response = (items: unknown[]) => Response.json({ items });
+  const video = (
+    id: string,
+    liveBroadcastContent: string,
+    duration: string,
+  ) => ({
+    id,
+    snippet: { title: id, liveBroadcastContent },
+    contentDetails: { duration },
+  });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      response([
+        video('abcdefghijk', 'none', 'PT1M'),
+        video('12345678901', 'live', 'PT1M'),
+      ]),
+    );
+  vi.stubGlobal('fetch', fetcher);
+  const ids = ['abcdefghijk', '12345678901', 'missing0001'];
+  const first = await fetchVideoMetadataBatch(ids);
+  expect(first).toEqual(
+    new Map([['abcdefghijk', { title: 'abcdefghijk', durationSeconds: 60 }]]),
+  );
+  expect(new URL(fetcher.mock.calls[0][0]).searchParams.get('id')).toBe(
+    ids.join(','),
+  );
+  fetcher.mockResolvedValueOnce(
+    response([
+      video('12345678901', 'none', 'PT2M'),
+      video('missing0001', 'none', 'PT3M'),
+    ]),
+  );
+  expect(await fetchVideoMetadataBatch(ids.slice(1))).toEqual(
+    new Map([
+      ['12345678901', { title: '12345678901', durationSeconds: 120 }],
+      ['missing0001', { title: 'missing0001', durationSeconds: 180 }],
+    ]),
+  );
+  expect((await fetchVideoMetadataBatch([])).size).toBe(0);
+});
+
+it('fails a batch on upstream errors or malformed metadata', async () => {
+  vi.stubEnv('YOUTUBE_API_KEY', 'test');
+  const fetcher = vi.fn().mockResolvedValue(new Response('', { status: 403 }));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(fetchVideoMetadataBatch(['abcdefghijk'])).rejects.toMatchObject({
+    status: 502,
+  });
+
+  fetcher.mockResolvedValue(
+    Response.json({
+      items: [{ id: 'abcdefghijk', snippet: { title: '' } }],
+    }),
+  );
+  await expect(fetchVideoMetadataBatch(['abcdefghijk'])).rejects.toMatchObject({
+    status: 502,
+  });
+
+  vi.stubEnv('YOUTUBE_API_KEY', '');
+  await expect(fetchVideoMetadataBatch(['abcdefghijk'])).rejects.toMatchObject({
+    status: 503,
+  });
+});
+
+it('does not save the first batch when a later batch fails', async () => {
+  const { app, batch, list } = setup();
+  const { channel: saved } = await (await register(app)).json();
+  list.mockResolvedValue(
+    Array.from({ length: 51 }, (_, index) => String(index).padStart(11, '0')),
+  );
+  batch.mockImplementationOnce(
+    async (ids) =>
+      new Map(
+        ids.map((id) => [id, { title: '新着動画', durationSeconds: 60 }]),
+      ),
+  );
+  batch.mockRejectedValueOnce(new MetadataError('failed'));
+
+  const response = await app.request(`/api/channels/${saved.id}/sync`, {
+    method: 'POST',
+  });
+  expect(response.status).toBe(502);
+  expect(batch).toHaveBeenCalledTimes(2);
+  expect((await (await app.request('/api/videos')).json()).videos).toHaveLength(
+    0,
+  );
 });
 
 it('validates channel URLs and resolves handles', async () => {
