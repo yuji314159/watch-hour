@@ -24,6 +24,7 @@ export const channels = sqliteTable('channels', {
   uploadsPlaylistId: text('uploads_playlist_id').notNull(),
   createdAt: text('created_at').notNull(),
   lastCheckedAt: text('last_checked_at'),
+  latestVideoId: text('latest_video_id'),
 });
 
 export const channelImports = sqliteTable(
