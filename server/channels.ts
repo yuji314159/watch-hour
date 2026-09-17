@@ -81,10 +81,14 @@ export async function fetchChannel(
 export async function fetchChannelVideos(
   playlistId: string,
   since: string,
-): Promise<string[]> {
+  stopAtVideoId: string | null,
+): Promise<{ ids: string[]; latestVideoId: string | null }> {
   const ids = new Set<string>();
   const tokens = new Set<string>();
   let pageToken = '';
+  let latestVideoId: string | null = null;
+  let olderRemaining: number | null = null;
+
   do {
     const body = await request('playlistItems', {
       part: 'contentDetails',
@@ -100,13 +104,22 @@ export async function fetchChannelVideos(
         !Number.isFinite(Date.parse(details.videoPublishedAt))
       )
         throw new MetadataError('動画一覧の応答が不正です。');
+
+      if (latestVideoId === null) latestVideoId = details.videoId;
       if (Date.parse(details.videoPublishedAt) >= Date.parse(since))
         ids.add(details.videoId);
+
+      if (olderRemaining !== null) {
+        olderRemaining--;
+        if (olderRemaining === 0) return { ids: [...ids], latestVideoId };
+      } else if (stopAtVideoId === details.videoId) {
+        olderRemaining = 10;
+      }
     }
     pageToken = body.nextPageToken ?? '';
     if (typeof pageToken !== 'string' || (pageToken && tokens.has(pageToken)))
       throw new MetadataError('動画一覧のページ情報が不正です。');
     tokens.add(pageToken);
   } while (pageToken);
-  return [...ids];
+  return { ids: [...ids], latestVideoId };
 }

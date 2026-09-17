@@ -180,9 +180,10 @@ export function createApp(
     syncing.add(id);
 
     try {
-      const ids = await getChannelVideos(
+      const { ids, latestVideoId } = await getChannelVideos(
         channel.uploadsPlaylistId,
         channel.createdAt,
+        channel.latestVideoId,
       );
       const seen = new Set(
         db
@@ -236,7 +237,10 @@ export function createApp(
 
         const updated = tx
           .update(channels)
-          .set({ lastCheckedAt: new Date().toISOString() })
+          .set({
+            lastCheckedAt: new Date().toISOString(),
+            latestVideoId,
+          })
           .where(eq(channels.id, id))
           .returning()
           .get();

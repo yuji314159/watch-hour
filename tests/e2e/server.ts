@@ -15,7 +15,7 @@ const app = createApp(
     title: 'テストチャンネル',
     uploadsPlaylistId: 'UUtest',
   }),
-  async () => ['channel0001'],
+  async () => ({ ids: ['channel0001'], latestVideoId: 'channel0001' }),
   async (ids) =>
     new Map(
       ids.map((id) => [
