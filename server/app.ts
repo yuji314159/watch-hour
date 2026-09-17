@@ -2,7 +2,12 @@ import { Hono } from 'hono';
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { channels, channelImports, videos } from './schema';
-import { parseVideoId, fetchVideoMetadata, MetadataError } from './youtube';
+import {
+  parseVideoId,
+  fetchVideoMetadata,
+  fetchVideoMetadataBatch,
+  MetadataError,
+} from './youtube';
 import type { openDatabase } from './db';
 
 import { fetchChannel, fetchChannelVideos, parseChannelUrl } from './channels';
@@ -16,6 +21,7 @@ export function createApp(
   getMetadata = fetchVideoMetadata,
   getChannel = fetchChannel,
   getChannelVideos = fetchChannelVideos,
+  getBatchMetadata = fetchVideoMetadataBatch,
 ) {
   const app = new Hono();
 
@@ -193,21 +199,15 @@ export function createApp(
       }[] = [];
       let skipped = 0;
 
-      for (const videoId of new Set(ids)) {
-        if (seen.has(videoId)) continue;
+      const unseen = [...new Set(ids)].filter((videoId) => !seen.has(videoId));
+      for (let offset = 0; offset < unseen.length; offset += 50) {
+        const batch = unseen.slice(offset, offset + 50);
+        const metadata = await getBatchMetadata(batch);
 
-        try {
-          pending.push({ videoId, ...(await getMetadata(videoId)) });
-        } catch (error) {
-          if (
-            error instanceof MetadataError &&
-            [404, 422].includes(error.status)
-          ) {
-            skipped++;
-            continue;
-          }
-
-          throw error;
+        for (const videoId of batch) {
+          const video = metadata.get(videoId);
+          if (video) pending.push({ videoId, ...video });
+          else skipped++;
         }
       }
 

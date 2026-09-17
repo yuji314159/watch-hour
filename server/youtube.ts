@@ -111,3 +111,70 @@ export async function fetchVideoMetadata(
     );
   }
 }
+
+export async function fetchVideoMetadataBatch(
+  videoIds: string[],
+): Promise<Map<string, VideoMetadata>> {
+  if (videoIds.length === 0) return new Map();
+  if (videoIds.length > 50)
+    throw new Error('動画情報は50件以下で取得してください。');
+
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key)
+    throw new MetadataError(
+      '動画情報の取得にはサーバーのYOUTUBE_API_KEY設定が必要です。',
+      503,
+    );
+
+  try {
+    const endpoint = new URL('https://www.googleapis.com/youtube/v3/videos');
+    endpoint.search = new URLSearchParams({
+      part: 'snippet,contentDetails',
+      id: videoIds.join(','),
+      key,
+    }).toString();
+    const response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok)
+      throw new MetadataError(
+        'YouTubeから動画情報を取得できませんでした。時間をおいて再度お試しください。',
+      );
+
+    const body = await response.json();
+    if (!Array.isArray(body.items))
+      throw new MetadataError('YouTubeの応答が不正です。再度お試しください。');
+
+    const requested = new Set(videoIds);
+    const metadata = new Map<string, VideoMetadata>();
+    for (const item of body.items) {
+      if (typeof item?.id !== 'string' || !requested.has(item.id))
+        throw new MetadataError(
+          'YouTubeの応答が不正です。再度お試しください。',
+        );
+
+      const title = item.snippet?.title;
+      if (typeof title !== 'string' || !title.trim())
+        throw new MetadataError('動画のタイトルを取得できませんでした。');
+
+      const durationSeconds = parseDuration(
+        item.contentDetails?.duration ?? '',
+      );
+      if (
+        item.snippet?.liveBroadcastContent === 'live' ||
+        item.snippet?.liveBroadcastContent === 'upcoming' ||
+        durationSeconds === null
+      )
+        continue;
+
+      metadata.set(item.id, { title: title.trim(), durationSeconds });
+    }
+
+    return metadata;
+  } catch (error) {
+    if (error instanceof MetadataError) throw error;
+    throw new MetadataError(
+      'YouTubeとの通信に失敗しました。再度お試しください。',
+    );
+  }
+}

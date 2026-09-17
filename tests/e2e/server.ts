@@ -16,6 +16,13 @@ const app = createApp(
     uploadsPlaylistId: 'UUtest',
   }),
   async () => ['channel0001'],
+  async (ids) =>
+    new Map(
+      ids.map((id) => [
+        id,
+        { title: 'お気に入りの動画', durationSeconds: 213 },
+      ]),
+    ),
 );
 app.use('*', serveStatic({ root: './dist' }));
 app.get('*', serveStatic({ path: './dist/index.html' }));
